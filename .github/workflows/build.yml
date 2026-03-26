@@ -39,11 +39,31 @@ jobs:
       - name: Build tasmota (1MB, SML)
         run: pio run -e tasmota
 
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
+      - name: Rename binary
+        run: |
+          cp build_output/firmware/tasmota.bin.gz tasmota-sml.bin.gz
+          cp build_output/firmware/tasmota.bin tasmota-sml.bin
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: tasmota-sml-${{ github.event.inputs.tasmota_tag }}
-          path: |
-            build_output/firmware/tasmota.bin
-            build_output/firmware/tasmota.bin.gz
-          retention-days: 90
+          tag_name: ${{ github.event.inputs.tasmota_tag }}
+          name: "Tasmota ${{ github.event.inputs.tasmota_tag }} SML"
+          body: |
+            Tasmota firmware build with SML support for 1MB ESP8266 devices (e.g. Sonoff Basic, ESP-01).
+
+            Based on [Tasmota ${{ github.event.inputs.tasmota_tag }}](https://github.com/arendst/Tasmota/releases/tag/${{ github.event.inputs.tasmota_tag }}) with `USE_SCRIPT` + `USE_SML_M` enabled.
+
+            ## OTA Update
+            ```
+            OtaUrl https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tasmota_tag }}/tasmota-sml.bin.gz
+            Upgrade 1
+            ```
+
+            > **Note for 1MB devices:** File upload via web UI may fail ("Not enough space").
+            > Use the OTA URL method above — the device downloads directly.
+          files: |
+            tasmota-sml.bin.gz
+            tasmota-sml.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
