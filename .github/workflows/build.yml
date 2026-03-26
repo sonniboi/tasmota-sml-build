@@ -1,0 +1,49 @@
+name: Build Tasmota SML (1MB)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tasmota_tag:
+        description: 'Tasmota release tag (e.g. v15.3.0)'
+        required: true
+        default: 'v15.3.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Tasmota
+        uses: actions/checkout@v4
+        with:
+          repository: arendst/Tasmota
+          ref: ${{ github.event.inputs.tasmota_tag }}
+          fetch-depth: 1
+
+      - name: Inject user_config_override.h
+        uses: actions/checkout@v4
+        with:
+          path: _this
+          fetch-depth: 1
+
+      - name: Copy override
+        run: cp _this/user_config_override.h tasmota/user_config_override.h
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ github.event.inputs.tasmota_tag }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build tasmota (1MB, SML)
+        run: pio run -e tasmota
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasmota-sml-${{ github.event.inputs.tasmota_tag }}
+          path: |
+            build_output/firmware/tasmota.bin
+            build_output/firmware/tasmota.bin.gz
+          retention-days: 90
