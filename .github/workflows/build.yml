@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # noetig fuer softprops/action-gh-release (Default ist read-only)
     steps:
       - name: Checkout Tasmota
         uses: actions/checkout@v4
