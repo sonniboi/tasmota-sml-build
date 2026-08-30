@@ -1,57 +1,144 @@
 # tasmota-sml-build
 
-Tasmota firmware builds with SML support for 1MB ESP8266 devices (Sonoff Basic, ESP-01, Hichi IR reader).
+Tasmota firmware builds with **SML support** for **1 MB ESP8266** devices (Hichi IR reader,
+Sonoff Basic, ESP-01).
 
-This is a continuation of [darth-hp/tasmota-hichi-sml-firmware](https://github.com/darth-hp/tasmota-hichi-sml-firmware), which is no longer maintained.
+Continuation of [darth-hp/tasmota-hichi-sml-firmware](https://github.com/darth-hp/tasmota-hichi-sml-firmware),
+which is no longer maintained.
 
-## What is this?
+## Why this repo exists
 
-[Tasmota](https://tasmota.github.io) is an open-source firmware for ESP8266/ESP32 devices. This repo builds a custom variant with **SML (Smart Message Language)** support enabled, which is required to read data from smart electricity meters via an IR optical head.
+[Tasmota](https://tasmota.github.io) is an open-source firmware for ESP8266/ESP32. The official
+builds **do not include SML support**, which is what you need to read a smart electricity meter
+through an IR optical head. This repo builds a variant with:
 
-The standard Tasmota builds do not include SML support. This build adds:
 - `USE_SCRIPT` — Tasmota scripting engine
-- `USE_SML_M` — SML parser for smart meters
+- `USE_SML_M` — Smart Message Language parser
 
-## Compatible Hardware
+`USE_RULES` is disabled to make room, because a 1 MB device has very little of it.
 
-- Sonoff Basic (1MB flash)
-- ESP-01 / ESP-01S (1MB flash)
-- Any ESP8266 with 1MB flash and IR optical head (e.g. Hichi Smartmeter reader)
+## Compatible hardware
+
+- Hichi / generic IR optical head with ESP8266, 1 MB flash
+- Sonoff Basic (1 MB), ESP-01 / ESP-01S (1 MB)
+
+Note that such a device often reports itself as "Sonoff Basic" on the info page — that is just the
+module template, not the actual hardware.
+
+## Releases
+
+Each release contains **both** images, and you need both for an OTA on a 1 MB device:
+
+| Asset | Purpose |
+|---|---|
+| `tasmota-sml.bin.gz` | the actual firmware (SML + scripting) |
+| `tasmota-minimal.bin.gz` | intermediate step for the two-stage OTA, built **without** the override |
+| `tasmota-sml.bin` | uncompressed, for serial flashing |
 
 ## Installation
 
-### First-time install
-Flash via serial using [Tasmota Web Installer](https://tasmota.github.io/install/) or esptool.
+### First-time install (serial)
 
-### OTA Update (existing Tasmota device)
+Flash `tasmota-sml.bin` with [Tasmota Web Installer](https://tasmota.github.io/install/) or esptool.
 
-> **Important for 1MB devices:** Web UI file upload fails with "Not enough space".
-> Use the OTA URL method instead — the device downloads directly from GitHub.
+### OTA update — read this before you try it
 
-In the Tasmota console or via HTTP API:
+On a 1 MB device an OTA is a **two-stage** process, and two things fail silently if you get it
+wrong. Both were verified on a real device.
 
+**1. A Web UI file upload does not work.** It fails with *"Not enough space"*. The device has to
+download the firmware itself, via `OtaUrl`.
+
+**2. Downloading straight from GitHub over HTTPS does not work either.** The ESP8266 has roughly
+18 kB of free heap, which is not enough for the TLS handshake; the transfer dies with
+`{"Upgrade":"Failed HTTP error: connection lost"}`. **Serve the files over plain HTTP from your own
+LAN instead.**
+
+**3. Both files must sit next to each other.** The full image (~500 kB compressed) does not fit
+into the free flash (~292 kB). Tasmota detects this on its own and then requests
+`tasmota-minimal.bin.gz` **from the same directory**, flashes it, reboots, and pulls the full image
+afterwards. If that file is missing you get `{"Upgrade":"Failed File Not Found (404)"}` and the
+device stays on the old firmware.
+
+```bash
+# on a machine in the same LAN
+mkdir otasrv && cd otasrv
+V=v15.6.0
+curl -sL -O https://github.com/sonniboi/tasmota-sml-build/releases/download/$V/tasmota-sml.bin.gz
+curl -sL -O https://github.com/sonniboi/tasmota-sml-build/releases/download/$V/tasmota-minimal.bin.gz
+python3 -m http.server 9876 --bind 0.0.0.0
+
+# then, against the device (replace both IPs)
+curl "http://<device-ip>/cm?cmnd=OtaUrl%20http%3A%2F%2F<server-ip>%3A9876%2Ftasmota-sml.bin.gz"
+curl "http://<device-ip>/cm?cmnd=Upgrade%201"
 ```
-OtaUrl https://github.com/sonniboi/tasmota-sml-build/releases/latest/download/tasmota-sml.bin.gz
-Upgrade 1
+
+The whole thing takes about 90 seconds and involves two reboots. **The device delivers no meter
+readings in between**, so do not start an OTA at a moment when you need the reading.
+
+Verify afterwards:
+
+```bash
+curl -s "http://<device-ip>/cm?cmnd=Status%202"   | jq .StatusFWR          # version
+curl -s "http://<device-ip>/cm?cmnd=Status%204"   | jq .StatusMEM.Sensors  # must contain 53
+curl -s "http://<device-ip>/cm?cmnd=Script%201"                            # must be ON
+curl -s "http://<device-ip>/cm?cmnd=Sensor53%20d3"                         # raw dump on
+curl -s "http://<device-ip>/cs?c2=0"                                       # watch OBIS arrive
+curl -s "http://<device-ip>/cm?cmnd=Sensor53%20d0"                         # raw dump off
 ```
 
-Or for a specific version:
-```
-OtaUrl https://github.com/sonniboi/tasmota-sml-build/releases/download/v15.3.0/tasmota-sml.bin.gz
-Upgrade 1
-```
+**Your script survives the update** — settings are kept across an OTA. It is only lost on a config
+reset or a serial flash with erased config, so back it up first: `curl -s http://<device-ip>/s10`.
+
+### Two small traps in the HTTP API
+
+- The script editor lives at **`/s10`**, not at `/ays`. The latter returns 404 and makes it look
+  like scripting is missing. In the UI: Main Menu → Tools → Edit Script.
+- `cmnd=Script` **without a parameter** answers `{"Command":"Error"}`. Use `Script 1`. Same for
+  `Sensor53` → `Sensor53 d`.
+
+### Since Tasmota 15.4.0.2: the referer check
+
+`SetOption128` now defaults to **OFF**, which means the referer check is active and requests
+**without** a referer header are rejected too (log: `Referer '' denied`). This affects `/cm`, `/dl`,
+`/cs` and the config pages — not the start page. Either set `SetOption128 ON`, or send a header
+with every call: `curl -H 'Referer: http://<device-ip>/' …`.
 
 ## Building
 
-Triggered manually via [GitHub Actions](.github/workflows/build.yml):
+Manual trigger via [GitHub Actions](.github/workflows/build.yml):
 
-1. Go to **Actions** → `Build Tasmota SML (1MB)` → **Run workflow**
-2. Enter the desired Tasmota tag (e.g. `v15.3.0`)
-3. A GitHub Release with `tasmota-sml.bin.gz` is created automatically
+1. **Actions** → `Build Tasmota SML (1MB)` → **Run workflow**
+2. Enter an upstream Tasmota tag, e.g. `v15.6.0`
+3. A release of the same name is created with all assets attached
 
-## SML Script Example
+The workflow checks out upstream at that tag, copies `user_config_override.h` over it and runs
+`pio run -e tasmota`. The minimal image is built in a second pass **without** the override — with
+`USE_SCRIPT`/`USE_SML_M` it would be too large to serve its purpose.
 
-After flashing, configure the SML reader in Tasmota under **Tools → Script**:
+Binaries are also uploaded as a workflow artifact (30 days), so a failure in the release step does
+not throw away the build.
+
+## Configuring the meter
+
+After flashing, set up the reader under **Tools → Edit Script** (`/s10`). Which script you need
+depends on what your meter speaks — and these are two genuinely different protocols:
+
+**SML** (most modern meters, binary, usually 9600 baud):
+
+```
+>D
+>B
+->sensor53 r
+>M 1
++1,3,s,0,9600,Power
+1,77070100010800ff@1000,Total consumption,kWh,Total,4
+1,77070100020800ff@1000,Total feed-in,kWh,Export,4
+1,77070100100700ff@1,Current power,W,Power,0
+#
+```
+
+**OBIS ASCII / IEC 62056-21** (older meters, plain text, 300 baud, needs a wake-up sequence):
 
 ```
 >D
@@ -63,10 +150,14 @@ After flashing, configure the SML reader in Tasmota under **Tools → Script**:
 #
 ```
 
-This reads OBIS 1.8.0 (total energy consumption in kWh) from the meter.
-See [Tasmota SML documentation](https://tasmota.github.io/docs/Smart-Meter-Interface/) for more OBIS codes.
+The `o` vs `s` in the descriptor line is what selects the protocol. Many meters only reveal their
+full data set — decimals and instantaneous power — once the **`inF`** (extended info) flag has been
+enabled on the meter itself, usually with a flashlight held against the optical eye.
+
+See the [Tasmota Smart Meter Interface docs](https://tasmota.github.io/docs/Smart-Meter-Interface/)
+for the descriptor syntax and more OBIS codes.
 
 ## Credits
 
-- [arendst/Tasmota](https://github.com/arendst/Tasmota) — the Tasmota firmware
+- [arendst/Tasmota](https://github.com/arendst/Tasmota) — the firmware
 - [darth-hp/tasmota-hichi-sml-firmware](https://github.com/darth-hp/tasmota-hichi-sml-firmware) — original idea and build config
