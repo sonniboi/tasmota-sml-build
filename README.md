@@ -157,6 +157,16 @@ enabled on the meter itself, usually with a flashlight held against the optical 
 See the [Tasmota Smart Meter Interface docs](https://tasmota.github.io/docs/Smart-Meter-Interface/)
 for the descriptor syntax and more OBIS codes.
 
+## License
+
+Licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE). That is the license
+of Tasmota itself, and the release binaries are builds of Tasmota with the override applied, so they
+fall under it as well.
+
+**Corresponding source** of a release: the upstream Tasmota tag named in the release, plus
+`user_config_override.h` and the workflow in this repository at the commit the release was built from.
+Nothing else is added to the firmware.
+
 ## Credits
 
 - [arendst/Tasmota](https://github.com/arendst/Tasmota) — the firmware
