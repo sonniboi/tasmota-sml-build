@@ -63,7 +63,7 @@ device stays on the old firmware.
 ```bash
 # on a machine in the same LAN
 mkdir otasrv && cd otasrv
-V=v15.6.0
+V=v16.0.0
 curl -sL -O https://github.com/sonniboi/tasmota-sml-build/releases/download/$V/tasmota-sml.bin.gz
 curl -sL -O https://github.com/sonniboi/tasmota-sml-build/releases/download/$V/tasmota-minimal.bin.gz
 python3 -m http.server 9876 --bind 0.0.0.0
@@ -109,7 +109,7 @@ with every call: `curl -H 'Referer: http://<device-ip>/' …`.
 Manual trigger via [GitHub Actions](.github/workflows/build.yml):
 
 1. **Actions** → `Build Tasmota SML (1MB)` → **Run workflow**
-2. Enter an upstream Tasmota tag, e.g. `v15.6.0`
+2. Enter an upstream Tasmota tag, e.g. `v16.0.0`
 3. A release of the same name is created with all assets attached
 
 The workflow checks out upstream at that tag, copies `user_config_override.h` over it and runs
